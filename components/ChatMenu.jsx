@@ -1,0 +1,366 @@
+import React, { useState, useEffect, useRef } from "react";
+import { RiFilePaper2Fill } from "react-icons/ri";
+import { BsFillChatLeftFill } from "react-icons/bs";
+import { motion } from "framer-motion";
+import { AiOutlineClose } from "react-icons/ai";
+import axios from 'axios';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
+const socket = io('http://localhost:3001');
+import { io } from 'socket.io-client';
+
+const ChatMenu = () => {
+  const [socket, setSocket] = useState(null);
+  const [messageNumber, setMessageNumber] = useState(1);
+
+  const [open, setOpen] = useState(false);
+  const [messageInput, setMessageInput] = useState("");
+  const [chatMessages, setChatMessages] = useState([]);
+  const chatContainerRef = useRef(null);
+  const inputRef = useRef(null);
+  const headerRef = useRef(null);
+  const [shouldScrollToBottom, setShouldScrollToBottom] = useState(true);
+  const getRandomOnlineCount = () => {
+    return Math.floor(Math.random() * (250 - 100 + 1)) + 50;
+  };
+  const [username, setUsername] = useState(""); // Add this line to your state declarations
+  const [level, setLevel] = useState(""); // Add this line to your state declarations
+
+  const [onlineCount, setOnlineCount] = useState("1"); 
+  
+  useEffect(() => {
+    // Initialize socket connection
+    const socket = io('http://localhost:3001');
+  
+    // Set the socket state
+    setSocket(socket);
+  
+    // Variable to track if the component is mounted
+    let isMounted = true;
+  
+    // Listen for 'connect' event to check if the connection is successful
+    socket.on('connect', async () => {
+      console.log('Socket connected');
+      
+      try {
+        // Emit 'getUserData' event to request user data from the server
+        socket.emit('getUserData'); // en onemlisi
+  
+        // Use a Promise to wait for the 'userData' event from the server
+        const userData = await new Promise((resolve) => {
+          // Listen for 'userData' event from the server
+          socket.on('userData', (data) => resolve(data));
+        });
+  
+        // Check if the component is still mounted
+        if (isMounted) {
+          if (userData.success) {
+            const {
+              id,
+              username,
+              email,
+              balance,
+              total_bets,
+              games_won,
+              total_wagered,
+              net_profit,
+              all_time_high,
+              all_time_low,
+              total_deposited,
+              total_withdrawn,
+              join_date,
+              level,
+              xp
+            } = userData.userData;
+  
+            // Update state variables accordingly
+            setUsername(username);
+            setBalance(balance);
+            setLevel(level);
+          } else {
+            // Handle error
+            console.error("Failed to fetch user data");
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching user data:", error);
+      }
+    });
+  
+    // Clean up the event listener when the component unmounts
+    return () => {
+      isMounted = false;
+      socket.disconnect();
+    };
+  }, []);  
+
+  useEffect(() => {
+    if (shouldScrollToBottom && chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+      setShouldScrollToBottom(false);
+    }
+  }, [shouldScrollToBottom, chatMessages, chatContainerRef]);
+
+  useEffect(() => {
+    const fetchLast20Messages = async () => {
+      try {
+        const response = await axios.get('http://localhost:3001/getLast20ChatMessages');
+        if (response.data.success) {
+          const messages = response.data.messages;
+          setChatMessages((prevMessages) => [...prevMessages, ...messages]);
+          setShouldScrollToBottom(true);
+        } else {
+          console.error('Failed to fetch last 20 chat messages');
+        }
+      } catch (error) {
+        console.error('Error fetching last 20 chat messages:', error);
+      }
+    };
+  
+    if (socket) {
+      fetchLast20Messages();
+  
+      // Listen for new chat messages using socket.io
+    }
+  
+    return () => {
+      if (socket) {
+        socket.disconnect();
+      }
+    };
+  }, [socket]);
+    
+  
+  useEffect(() => {
+    const socket = io('http://localhost:3001');
+
+    socket.on('onlineCount', (count) => {
+      setOnlineCount(count);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  function useChatScroll(dep) {
+    const ref = useRef();
+    useEffect(() => {
+      if (ref.current) {
+        ref.current.scrollTop = ref.current.scrollHeight;
+      }
+    }, [dep]);
+    return ref;
+  }
+
+  const menuVariants = {
+    hidden: {
+      x: "0%",
+    },
+    hiddenAside: {
+      x: "100%",
+    },
+    show: {
+      x: 800,
+      transition: {
+        ease: [0.6, 0.01, -0.05, 0.9],
+      },
+    },
+    hiddenX: {
+      x: -500,
+    },
+  };
+  const getCurrentTime = () => {
+    const now = new Date();
+    const hours = now.getHours().toString().padStart(2, "0");
+    const minutes = now.getMinutes().toString().padStart(2, "0");
+    const seconds = now.getSeconds().toString().padStart(2, "0");
+
+    return `${hours}:${minutes}:${seconds}`;
+  };
+  
+  const handleSendMessage = () => {
+    if (!username || !localStorage.getItem('token')) {
+      toast.error('Authentication failed. Please sign up or log in!');
+      console.error('Username or token not available. Cannot send message.');
+      return;
+    }
+    if (!messageInput.trim()) {
+      toast.warning('Please enter a non-empty message.');
+      return;
+    }
+  
+    const randomTime = getRandomTime();
+    const randomLevel = getRandomLevel();
+  
+    const newMessage = {
+      user_name: username,
+      level: level,
+      time: getCurrentTime(), // Use a function to get the current time
+      message: messageInput,
+    };
+  
+    // Emit the chat message to the server
+    socket.emit('chatMessage', newMessage);
+    toast.success('Message sent succesfuly.');
+
+    setChatMessages((prevMessages) => [...prevMessages, newMessage]);
+    setMessageInput('');
+    setShouldScrollToBottom(true);
+  };
+  
+  const handleKeyPress = (e) => {
+    if (e.key === "Enter") {
+      handleSendMessage();
+    }
+  };
+
+  const getRandomUser = () => {
+    const users = ["Alice", "Bob", "Charlie", "David", "Eva"];
+    const randomIndex = Math.floor(Math.random() * users.length);
+    return users[randomIndex];
+  };
+/*  useEffect(() => {
+
+    const intervalId = setInterval(() => {
+      // Generate a random message
+      const newMessage = {
+        user_name: getRandomUser(),
+        level: getRandomLevel(),
+        time: getCurrentTime(),
+        message: `Random message ${messageNumber}`,
+      };
+
+      // Emit the random message to the server
+      if (socket) {
+        socket.emit('chatMessage', newMessage);
+     //   toast.success('Random message sent successfully.');
+      }
+
+      setChatMessages((prevMessages) => [...prevMessages, newMessage]);
+      setShouldScrollToBottom(true);
+      setMessageNumber((prevNumber) => prevNumber + 1);
+
+    }, 500); // Update every 5 seconds
+    return () => clearInterval(intervalId); // Clean up the interval on component unmount
+  }, [socket, shouldScrollToBottom, chatMessages, messageNumber]);*/
+  
+  const getRandomTime = () => {
+    const hours = Math.floor(Math.random() * 24);
+    const minutes = Math.floor(Math.random() * 60);
+    return `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
+  };
+
+  const getRandomLevel = () => {
+    return Math.floor(Math.random() * 30) + 1;
+  };
+
+  useEffect(() => {
+    if (inputRef.current && open) {
+      inputRef.current.focus();
+    }
+  }, [open]);
+
+  return (
+    <>
+      <ToastContainer
+        position="top-right"
+        autoClose={2500}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="white"
+        style={{
+          fontSize: '14px', // Adjust the font size
+          padding: '10px', // Adjust the padding
+          maxWidth: '100%', // Ensure the container is responsive 
+        }}
+      />
+
+      <aside className="fixed top-0 left-0 w-[350px] h-full px-6">
+        <div className="bg-gray-700 w-12 h-12 rounded-lg absolute top-[120px] left-[0px] p-3 hidden sm:block xl:hidden ">
+          <BsFillChatLeftFill
+            onClick={() => setOpen(true)}
+            className="xl:hidden flex justify-center items-center w-full h-full text-white text-2xl cursor-pointer"
+          />
+        </div>
+        <motion.div
+          variants={menuVariants}
+          initial="hiddenX"
+          animate={open ? "show" : ""}
+          className="bg-primary shadow-2xl w-full fixed top-0 sm:-left-[800px] md:-left-[800px] lg:left-[500px] max-w-[400px] h-full px-8 aside-div overflow"
+        >
+          <div onClick={() => setOpen(false)} className="lg:hidden sm:block">
+            <AiOutlineClose className="text-[1.5rem] text-white absolute top-[97px] right-4 cursor-pointer hover:text-grey transition duration-200" />
+          </div>
+          <div className="mt-24 flex justify-between" ref={headerRef}>
+            <div className="flex items-center gap-x-2">
+              <div className="w-4 h-4 rounded-full slave"></div>
+              <p className="text-grey font-semibold">{onlineCount} Online</p>
+            </div> 
+            <div className="flex items-center gap-x-2 sm:mr-6">
+              <RiFilePaper2Fill className="text-xl text-grey" />
+              <a href="#" className="text-grey">
+                Chat Rules
+              </a> 
+            </div>
+          </div> 
+          <div className="overflow-y-hidden " style={{ maxHeight: "calc(93% - 145px)" }} ref={chatContainerRef}>
+            <ul className="flex flex-col gap-y-6"> 
+              {chatMessages.map((message, idx) => (           // overflow-y-auto
+
+                <li key={idx} className="flex items-center gap-x-2 h-[70px]">
+                  <div className="w-12 overflow-hidden bg-blue-500 rounded-full flex">
+                    <img
+                      src={'https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/avatars/a1/a12f8f01ad39371bcce9fe711bf1563f608011a9_full.jpg'}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+
+                  <div className="flex flex-col items-start -mt-8">
+                    <div className="flex justify-center items-center gap-x-4">
+                      <div>
+                        <small className="adminusernamestyle text-white text-base font-semibold">
+                          {message.user_name}
+                        </small>
+                      </div>
+                      <div className="adminlevel px-4 rounded-sm text-semibold text-xl">
+                        <small>Admin{message.level}</small>
+                      </div>
+                      <div>
+                        <small className="text-grey">{message.time}</small>
+                      </div>
+                    </div>
+                    <div className="bg-gray-800 rounded-md px-2 py-1 -mb-6 mt-1">
+                      <p className="text-white">{message.message}</p>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="mt-8" style={{ position: "sticky", bottom: 0 }}>
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Type your message..."
+              value={messageInput}
+              onChange={(e) => setMessageInput(e.target.value)}
+              className="w-full h-10 bg-gray-800 text-white px-4 rounded-md"
+              onKeyDown={(event) =>
+                event.key === "Enter" ? handleKeyPress(event) : null
+              }
+            />
+          </div>
+        </motion.div>
+      </aside>
+    </>
+  );
+};
+
+export default ChatMenu;
